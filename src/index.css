@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #0d0605; /* very dark reddish brown */
+  color: white;
+  font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
+  overflow: hidden; /* For full screen dashboard and 3d view */
+}
+
+/* Custom scrollbar for modern look */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 243, 255, 0.3);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 243, 255, 0.5);
+}
