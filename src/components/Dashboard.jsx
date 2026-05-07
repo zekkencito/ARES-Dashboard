@@ -4,45 +4,50 @@ import { OrbitControls, Stars, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 
 /* 3D */
-function MarsTerrain() {
+function MarsTerrain({ modoEscaneo, humidity, terrainRef }) {
   const { scene } = useGLTF('./mars_landscape.glb');
 
   React.useEffect(() => {
     scene.traverse((child) => {
       if (child.isMesh && child.material) {
         const mat = child.material;
-        if (mat.color) {
-          mat.color.setHex(0xC15A2E);
-        }
-        if (mat.roughness !== undefined) mat.roughness = 0.95;
-        if (mat.metalness !== undefined) mat.metalness = 0.05;
+
+        // Base reset
+        mat.wireframe = false;
+        mat.color.setHex(0xC15A2E);
         if (mat.emissive) {
           mat.emissive.setHex(0x3A1F0F);
           mat.emissiveIntensity = 0.18;
         }
+
+        if (modoEscaneo === 'Fotogrametría (Malla 3D)') {
+          mat.wireframe = true;
+          mat.color.setHex(0x00ffcc);
+          if (mat.emissive) mat.emissive.setHex(0x000000);
+        } else if (modoEscaneo === 'Multiespectral / Térmico') {
+          // Color based on humidity (0-100)
+          const h = humidity / 100;
+          const r = Math.floor(255 * (1 - h));
+          const g = Math.floor(102 * (1 - h) + 102 * h);
+          const b = Math.floor(255 * h);
+          mat.color.setRGB(r / 255, g / 255, b / 255);
+        } else {
+          if (mat.roughness !== undefined) mat.roughness = 0.95;
+          if (mat.metalness !== undefined) mat.metalness = 0.05;
+        }
+        mat.needsUpdate = true;
       }
     });
-  }, [scene]);
+  }, [scene, modoEscaneo, humidity]);
 
   return (
-    <group position={[0, -50, 0]}>
+    <group position={[0, -50, 0]} ref={terrainRef}>
       <primitive object={scene} scale={50} />
     </group>
   );
 }
 
-function ScanLine() {
-  const ref = useRef();
-  useFrame(({ clock }) => {
-    if (ref.current) ref.current.position.z = Math.sin(clock.getElapsedTime() * 0.4) * 45;
-  });
-  return (
-    <mesh ref={ref} position={[0, 4, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-      <planeGeometry args={[120, 0.12]} />
-      <meshBasicMaterial color="#ff9988" transparent opacity={0.35} side={THREE.DoubleSide} />
-    </mesh>
-  );
-}
+
 
 function ScanRing({ totalArea }) {
   const ref = useRef();
@@ -53,14 +58,14 @@ function ScanRing({ totalArea }) {
   return (
     <mesh ref={ref} position={[0, 5, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={1}>
       <ringGeometry args={[radius - 1, radius, 80]} />
-      <meshBasicMaterial 
-        color="#ff6655" 
-        transparent 
-        opacity={0.18} 
+      <meshBasicMaterial
+        color="#ff6655"
+        transparent
+        opacity={0.18}
         side={THREE.DoubleSide}
-        blending={THREE.AdditiveBlending} 
-        depthWrite={false} 
-        depthTest={false} 
+        blending={THREE.AdditiveBlending}
+        depthWrite={false}
+        depthTest={false}
       />
     </mesh>
   );
@@ -83,17 +88,25 @@ function DroneBody() {
   );
 }
 
-function DroneController({ totalArea, controlsRef }) {
+function DroneController({ totalArea, controlsRef, terrainRef }) {
   const groupRef = useRef();
-  const keys = useRef({ w:false,a:false,s:false,d:false,q:false,e:false,
-    ArrowUp:false,ArrowDown:false,ArrowLeft:false,ArrowRight:false });
+  const keys = useRef({
+    w: false, a: false, s: false, d: false, q: false, e: false,
+    ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false
+  });
+  
+  const raycaster = useRef(new THREE.Raycaster());
 
   useEffect(() => {
-    const skip = e => ['input','textarea'].includes(e.target.tagName.toLowerCase());
-    const dn = e => { if (skip(e)) return; const k=e.key,lk=k.toLowerCase(); 
-      if(k in keys.current)keys.current[k]=true; else if(lk in keys.current)keys.current[lk]=true; };
-    const up = e => { if (skip(e)) return; const k=e.key,lk=k.toLowerCase(); 
-      if(k in keys.current)keys.current[k]=false; else if(lk in keys.current)keys.current[lk]=false; };
+    const skip = e => ['input', 'textarea'].includes(e.target.tagName.toLowerCase());
+    const dn = e => {
+      if (skip(e)) return; const k = e.key, lk = k.toLowerCase();
+      if (k in keys.current) keys.current[k] = true; else if (lk in keys.current) keys.current[lk] = true;
+    };
+    const up = e => {
+      if (skip(e)) return; const k = e.key, lk = k.toLowerCase();
+      if (k in keys.current) keys.current[k] = false; else if (lk in keys.current) keys.current[lk] = false;
+    };
     window.addEventListener('keydown', dn);
     window.addEventListener('keyup', up);
     return () => { window.removeEventListener('keydown', dn); window.removeEventListener('keyup', up); };
@@ -101,25 +114,57 @@ function DroneController({ totalArea, controlsRef }) {
 
   useFrame((state, delta) => {
     const sp = 38 * delta;
-    let dx=0,dz=0,dy=0;
-    if (keys.current.w||keys.current.ArrowUp)    dz -= sp;
-    if (keys.current.s||keys.current.ArrowDown)  dz += sp;
-    if (keys.current.a||keys.current.ArrowLeft)  dx -= sp;
-    if (keys.current.d||keys.current.ArrowRight) dx += sp;
+    let dx = 0, dz = 0, dy = 0;
+    if (keys.current.w || keys.current.ArrowUp) dz -= sp;
+    if (keys.current.s || keys.current.ArrowDown) dz += sp;
+    if (keys.current.a || keys.current.ArrowLeft) dx -= sp;
+    if (keys.current.d || keys.current.ArrowRight) dx += sp;
     if (keys.current.q) dy -= sp;
     if (keys.current.e) dy += sp;
 
-    if (dx||dz||dy) {
-      groupRef.current.position.x += dx;
-      groupRef.current.position.z += dz;
-      groupRef.current.position.y += dy;
+    if (dx || dz || dy) {
+      let nextX = groupRef.current.position.x + dx;
+      let nextZ = groupRef.current.position.z + dz;
+      let nextY = groupRef.current.position.y + dy;
+      
+      let appliedDy = dy;
+
+      if (terrainRef.current) {
+        const downVector = new THREE.Vector3(0, -1, 0);
+        raycaster.current.set(new THREE.Vector3(nextX, 500, nextZ), downVector);
+        
+        const intersects = raycaster.current.intersectObject(terrainRef.current, true);
+        
+        if (intersects.length > 0) {
+          const terrainY = intersects[0].point.y;
+          const minHover = terrainY + 4; 
+          const droneWorldY = nextY + 80;
+          
+          if (droneWorldY < minHover) {
+            const correction = minHover - droneWorldY;
+            appliedDy += correction;
+            nextY += correction;
+          }
+          
+          const altDisplay = document.getElementById('alt-display');
+          if (altDisplay) {
+            const alt = Math.max(0, (nextY + 80) - terrainY);
+            altDisplay.innerText = `ALT ${alt.toFixed(1)} m`;
+          }
+        }
+      }
+
+      groupRef.current.position.x = nextX;
+      groupRef.current.position.z = nextZ;
+      groupRef.current.position.y = nextY;
+
       if (controlsRef.current) {
         controlsRef.current.target.x += dx;
         controlsRef.current.target.z += dz;
-        controlsRef.current.target.y += dy;
+        controlsRef.current.target.y += appliedDy;
         state.camera.position.x += dx;
         state.camera.position.z += dz;
-        state.camera.position.y += dy;
+        state.camera.position.y += appliedDy;
       }
     }
   });
@@ -257,7 +302,7 @@ function Spin({ size = 14, color = T.accent }) {
   );
 }
 
-function HudTag({ children, color = T.textTertiary }) {
+function HudTag({ children, color = T.textTertiary, style = {} }) {
   return (
     <div style={{
       display: 'inline-flex', alignItems: 'center', padding: '3px 10px',
@@ -265,6 +310,7 @@ function HudTag({ children, color = T.textTertiary }) {
       border: `1px solid ${T.border}`, borderRadius: 99,
       fontFamily: T.mono, fontSize: 8.5, fontWeight: 400, letterSpacing: '0.16em',
       color, whiteSpace: 'nowrap',
+      ...style
     }}>
       {children}
     </div>
@@ -276,7 +322,9 @@ export default function Dashboard({ totalArea, setTotalArea }) {
   const [temperature, setTemperature] = useState(-15);
   const [humidity, setHumidity] = useState(15);
   const [pressure, setPressure] = useState(600);
+  const [pendiente, setPendiente] = useState(5);
   const [currentWater, setCurrentWater] = useState(2500000);
+  const [modoEscaneo, setModoEscaneo] = useState('RGB (Óptico)');
   const [isCalculating, setIsCalculating] = useState(false);
   const [result, setResult] = useState(null);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
@@ -287,6 +335,7 @@ export default function Dashboard({ totalArea, setTotalArea }) {
   const [showVisionCard, setShowVisionCard] = useState(true);
   const audioRef = useRef(null);
   const controlsRef = useRef();
+  const terrainRef = useRef();
 
   async function handleCalculate() {
     setIsCalculating(true); setResult(null);
@@ -295,7 +344,7 @@ export default function Dashboard({ totalArea, setTotalArea }) {
       const base = import.meta.env.VITE_API_URL || 'http://localhost:8000';
       const res = await fetch(`${base}/api/analizar-terreno`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ temperature, humidity, pressure, totalArea, currentWater }),
+        body: JSON.stringify({ temperature, humidity, pressure, totalArea, currentWater, pendiente }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -328,7 +377,7 @@ export default function Dashboard({ totalArea, setTotalArea }) {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: [...chatMsgs, msg],
-          telemetry: { temperature, humidity, pressure, totalArea, currentWater, requiredWater: result?.aguaRequeridaLitros || 0 },
+          telemetry: { temperature, humidity, pressure, totalArea, currentWater, requiredWater: result?.aguaRequeridaLitros || 0, pendiente },
         }),
       });
       const data = await res.json();
@@ -364,31 +413,20 @@ export default function Dashboard({ totalArea, setTotalArea }) {
           <pointLight position={[-60, 40, -60]} intensity={0.75} color="#ff7744" distance={190} />
           <pointLight position={[60, 25, 60]} intensity={0.4} color="#aa6644" distance={130} />
           <Stars radius={130} depth={65} count={8000} factor={3} saturation={0} fade speed={0.3} />
-          <ScanLine />
-          <DroneController totalArea={totalArea} controlsRef={controlsRef} />
-          <Suspense fallback={null}><MarsTerrain /></Suspense>
+          <DroneController totalArea={totalArea} controlsRef={controlsRef} terrainRef={terrainRef} />
+          <Suspense fallback={null}><MarsTerrain modoEscaneo={modoEscaneo} humidity={humidity} terrainRef={terrainRef} /></Suspense>
           <OrbitControls ref={controlsRef} enablePan={false}
             maxPolarAngle={Math.PI / 2 - 0.04} minDistance={5} maxDistance={115} target={[0, 80, 0]} />
         </Canvas>
       </div>
 
       {/* CRT scanlines */}
-      <div style={{ position: 'absolute', inset: 0, zIndex: 2, pointerEvents: 'none',
-        background: 'repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,0.018) 3px,rgba(0,0,0,0.018) 4px)' }} />
+      <div style={{
+        position: 'absolute', inset: 0, zIndex: 2, pointerEvents: 'none',
+        background: 'repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,0.018) 3px,rgba(0,0,0,0.018) 4px)'
+      }} />
 
-      {/* HUD OVERLAYS */}
-      <div style={{ position: 'absolute', top: 90, left: 24, zIndex: 20, pointerEvents: 'none', display: 'flex', flexDirection: 'column', gap: 7 }}>
-        <HudTag color={T.rose}>● REC</HudTag>
-        <HudTag>ALT 80.4 m</HudTag>
-        <HudTag>ESCANEO · MULTIESPECTRAL</HudTag>
-        <HudTag color={T.accent}>WASD + Q/E — MOVER DRON</HudTag>
-      </div>
-
-      <div style={{ position: 'absolute', top: 90, right: 24, zIndex: 20, pointerEvents: 'none', display: 'flex', flexDirection: 'column', gap: 7, alignItems: 'flex-end' }}>
-        <HudTag>VALLES MARINERIS · B-42</HudTag>
-        <HudTag>14.5°S · 55.7°W</HudTag>
-      </div>
-
+      {/* HUD OVERLAYS (Centro) */}
       <div style={{ position: 'absolute', bottom: 84, left: '50%', transform: 'translateX(-50%)', zIndex: 20, pointerEvents: 'none' }}>
         <HudTag>ÁREA {totalArea} km² · E1 {(totalArea * 0.5).toFixed(1)} km² · E2 {(totalArea * 0.5).toFixed(1)} km²</HudTag>
       </div>
@@ -409,7 +447,7 @@ export default function Dashboard({ totalArea, setTotalArea }) {
         <GlassPanel style={{ padding: '20px 16px' }}>
           <div style={{ marginBottom: 28 }}>
             <span style={{ fontFamily: T.serif, fontSize: 20, fontWeight: 500, color: T.textMax, letterSpacing: '-0.02em' }}>A.R.E.S.</span>
-            <EyeBrow>MARS MISSION</EyeBrow>
+            <EyeBrow>Analizador Remoto de Equidad y Saturación</EyeBrow>
           </div>
           <nav style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {[
@@ -419,8 +457,12 @@ export default function Dashboard({ totalArea, setTotalArea }) {
               { id: 'chat', label: 'DaLiA', icon: '◍' },
             ].map(item => (
               <button key={item.id} onClick={() => {
-                setActiveView(item.id);
-                if (item.id !== 'vision3d') setShowVisionCard(false);
+                if (activeView === item.id) {
+                  setActiveView(null);
+                } else {
+                  setActiveView(item.id);
+                  if (item.id !== 'vision3d') setShowVisionCard(false);
+                }
               }} style={{
                 display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', width: '100%',
                 background: activeView === item.id ? T.accentDim : 'transparent',
@@ -436,7 +478,17 @@ export default function Dashboard({ totalArea, setTotalArea }) {
           </nav>
         </GlassPanel>
 
-        <GlassPanel style={{ padding: '14px 16px' }}>
+        {/* HUD OVERLAYS LEFT */}
+        <div style={{ pointerEvents: 'none', display: 'flex', flexDirection: 'column', gap: 7, alignItems: 'flex-start' }}>
+          <HudTag color={T.rose}>● REC</HudTag>
+          <HudTag><span id="alt-display">ALT 80.4 m</span></HudTag>
+          <HudTag>TELEDETECCIÓN: ACTIVA</HudTag>
+          <HudTag style={{ whiteSpace: 'normal', textAlign: 'left' }}>MODO DE CÁMARA: {modoEscaneo.toUpperCase()}</HudTag>
+          <HudTag>ENLACE DE DATOS: SEGURO</HudTag>
+          <HudTag color={T.accent} style={{ whiteSpace: 'normal', textAlign: 'left' }}>WASD + Q/E — MOVER DRON</HudTag>
+        </div>
+
+        <GlassPanel style={{ padding: '14px 16px', marginTop: 'auto' }}>
           <StatusDot color={T.teal} blink>SISTEMA ACTIVO</StatusDot>
           <div style={{ marginTop: 10, fontFamily: T.mono, fontSize: 8, color: T.textTertiary }}>UPTIME 47d · 12h</div>
         </GlassPanel>
@@ -444,12 +496,19 @@ export default function Dashboard({ totalArea, setTotalArea }) {
 
       {/* RIGHT PANEL */}
       <div style={{ position: 'absolute', right: 20, top: 20, bottom: 20, width: 230, zIndex: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+        {/* HUD OVERLAYS RIGHT */}
+        <div style={{ pointerEvents: 'none', display: 'flex', flexDirection: 'column', gap: 7, alignItems: 'flex-end' }}>
+          <HudTag>VALLES MARINERIS · B-42</HudTag>
+          <HudTag>14.5°S · 55.7°W</HudTag>
+        </div>
+
         <GlassPanel style={{ padding: '16px 18px' }}>
           <EyeBrow>Telemetría</EyeBrow>
           <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontFamily: T.mono, fontSize: 9, color: T.textTertiary }}>Temperatura</span>
+                <span style={{ fontFamily: T.mono, fontSize: 9, color: T.textTertiary }}>Lectura Térmica Superficial</span>
                 <span style={{ fontFamily: T.mono, fontSize: 10, color: T.rose }}>{temperature}°C</span>
               </div>
               <div style={{ height: 1, background: T.border, marginTop: 4 }}>
@@ -458,11 +517,20 @@ export default function Dashboard({ totalArea, setTotalArea }) {
             </div>
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontFamily: T.mono, fontSize: 9, color: T.textTertiary }}>Humedad</span>
+                <span style={{ fontFamily: T.mono, fontSize: 9, color: T.textTertiary }}>Saturación Hídrica</span>
                 <span style={{ fontFamily: T.mono, fontSize: 10, color: T.blue }}>{humidity}%</span>
               </div>
               <div style={{ height: 1, background: T.border, marginTop: 4 }}>
                 <div style={{ height: 1, width: `${humidity}%`, background: T.blue }} />
+              </div>
+            </div>
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontFamily: T.mono, fontSize: 9, color: T.textTertiary }}>Pendiente Topográfica</span>
+                <span style={{ fontFamily: T.mono, fontSize: 10, color: T.teal }}>{pendiente}°</span>
+              </div>
+              <div style={{ height: 1, background: T.border, marginTop: 4 }}>
+                <div style={{ height: 1, width: `${(pendiente / 30) * 100}%`, background: T.teal }} />
               </div>
             </div>
             <div>
@@ -514,7 +582,7 @@ export default function Dashboard({ totalArea, setTotalArea }) {
               </h2>
               <p style={{ fontFamily: T.sans, fontSize: 12, color: T.textSecondary, lineHeight: 1.5, marginBottom: 20 }}>
                 El dron está en vuelo autónomo sobre la superficie marciana rojiza.
-                Puedes controlarlo con las teclas <strong style={{ color: T.accent }}>WASD</strong> y 
+                Puedes controlarlo con las teclas <strong style={{ color: T.accent }}>WASD</strong> y
                 <strong style={{ color: T.accent }}> Q/E</strong>.
               </p>
               <button
@@ -539,10 +607,28 @@ export default function Dashboard({ totalArea, setTotalArea }) {
               Configuración del sistema
             </h2>
             <SliderGold label="Cuadrante total" value={totalArea} min={1} max={100} onChange={setTotalArea} unit=" km²" />
-            <SliderGold label="Temperatura" value={temperature} min={-80} max={20} onChange={setTemperature} unit="°C" color={T.rose} />
-            <SliderGold label="Humedad" value={humidity} min={0} max={100} onChange={setHumidity} unit="%" color={T.blue} />
+            <SliderGold label="Lectura Térmica Superficial" value={temperature} min={-80} max={20} onChange={setTemperature} unit="°C" color={T.rose} />
+            <SliderGold label="Saturación Hídrica (Análisis Térmico)" value={humidity} min={0} max={100} onChange={setHumidity} unit="%" color={T.blue} />
+            <SliderGold label="Pendiente Topográfica (Fotogrametría)" value={pendiente} min={0} max={30} onChange={setPendiente} unit="°" color={T.teal} />
             <SliderGold label="Presión" value={pressure} min={100} max={1000} step={10} onChange={setPressure} unit=" Pa" color={T.purple} />
-            
+
+            <div style={{ marginBottom: 24 }}>
+              <EyeBrow>Modo de Escáner Óptico</EyeBrow>
+              <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                {['RGB (Óptico)', 'Fotogrametría (Malla 3D)', 'Multiespectral / Térmico'].map(m => (
+                  <button key={m} onClick={() => setModoEscaneo(m)} style={{
+                    flex: 1, padding: '8px 4px', background: modoEscaneo === m ? T.accentDim : 'transparent',
+                    border: `1px solid ${modoEscaneo === m ? T.accent : T.border}`, borderRadius: 8,
+                    color: modoEscaneo === m ? T.accent : T.textSecondary, fontFamily: T.sans, fontSize: 10, cursor: 'pointer',
+                    transition: 'all 0.2s', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', lineHeight: 1.2
+                  }}>
+                    <span>{m.split(' ')[0]}</span>
+                    {m.includes('(') || m.includes('/') ? <span style={{ fontSize: 8, opacity: 0.7, marginTop: 2 }}>{m.substring(m.indexOf(' '))}</span> : null}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div style={{ marginBottom: 24 }}>
               <EyeBrow>Reservas de agua (L)</EyeBrow>
               <input type="number" value={currentWater} onChange={e => setCurrentWater(Number(e.target.value))} style={{
@@ -550,7 +636,7 @@ export default function Dashboard({ totalArea, setTotalArea }) {
                 borderRadius: 12, padding: '10px 14px', color: T.textMax, fontFamily: T.mono, fontSize: 13, outline: 'none',
               }} />
             </div>
-            
+
             <button onClick={handleCalculate} disabled={isCalculating} style={{
               width: '100%', background: isCalculating ? 'rgba(255,255,255,0.03)' : T.accentDim,
               border: `1px solid ${T.accent}`, borderRadius: 40, padding: '12px 0',
@@ -569,18 +655,18 @@ export default function Dashboard({ totalArea, setTotalArea }) {
               <div style={{ width: 8, height: 8, borderRadius: '50%', background: st.color, animation: 'breathe 1.5s infinite' }} />
               <span style={{ fontFamily: T.serif, fontSize: 20, fontWeight: 400, color: st.color }}>{st.label}</span>
             </div>
-            
+
             <p style={{ fontFamily: T.sans, fontSize: 12, color: T.textSecondary, lineHeight: 1.5, marginBottom: 24 }}>
               {result.explicacion?.slice(0, 140)}...
             </p>
-            
+
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 24 }}>
               <MetricCard label="Requerida" value={(result.aguaRequeridaLitros / 1000).toFixed(0)} unit="kL" />
               <MetricCard label="Disponible" value={(currentWater / 1000).toFixed(0)} unit="kL" />
               <MetricCard label="Sector A" value={(totalArea * 0.5).toFixed(0)} unit="km²" />
               <MetricCard label="Sector B" value={(totalArea * 0.5).toFixed(0)} unit="km²" />
             </div>
-            
+
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                 <EyeBrow>Cobertura hídrica</EyeBrow>
@@ -617,7 +703,7 @@ export default function Dashboard({ totalArea, setTotalArea }) {
             </div>
             <StatusDot color={T.teal} blink>activo</StatusDot>
           </div>
-          
+
           <div style={{ height: 240, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
             {chatMsgs.length === 0 && (
               <div style={{ textAlign: 'center', fontFamily: T.serif, fontStyle: 'italic', color: T.textTertiary, fontSize: 12, padding: '30px 0' }}>
@@ -645,7 +731,7 @@ export default function Dashboard({ totalArea, setTotalArea }) {
               </div>
             )}
           </div>
-          
+
           <form onSubmit={handleChat} style={{ padding: '12px 16px', borderTop: `1px solid ${T.border}`, display: 'flex', gap: 10 }}>
             <input type="text" value={chatInput} onChange={e => setChatInput(e.target.value)}
               placeholder="Pregunta a DaLiA..." style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: T.textMax, fontSize: 12, fontFamily: T.sans }} />
