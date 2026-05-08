@@ -3,7 +3,6 @@ import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Stars, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 
-/* 3D */
 function MarsTerrain({ modoEscaneo, humidity, terrainRef }) {
   const { scene } = useGLTF('./mars_landscape.glb');
 
@@ -12,7 +11,6 @@ function MarsTerrain({ modoEscaneo, humidity, terrainRef }) {
       if (child.isMesh && child.material) {
         const mat = child.material;
 
-        // Base reset
         mat.wireframe = false;
         mat.color.setHex(0xC15A2E);
         if (mat.emissive) {
@@ -25,7 +23,6 @@ function MarsTerrain({ modoEscaneo, humidity, terrainRef }) {
           mat.color.setHex(0x00ffcc);
           if (mat.emissive) mat.emissive.setHex(0x000000);
         } else if (modoEscaneo === 'Multiespectral / Térmico') {
-          // Color based on humidity (0-100)
           const h = humidity / 100;
           const r = Math.floor(255 * (1 - h));
           const g = Math.floor(102 * (1 - h) + 102 * h);
@@ -94,7 +91,7 @@ function DroneController({ totalArea, controlsRef, terrainRef }) {
     w: false, a: false, s: false, d: false, q: false, e: false,
     ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false
   });
-  
+
   const raycaster = useRef(new THREE.Raycaster());
 
   useEffect(() => {
@@ -126,26 +123,26 @@ function DroneController({ totalArea, controlsRef, terrainRef }) {
       let nextX = groupRef.current.position.x + dx;
       let nextZ = groupRef.current.position.z + dz;
       let nextY = groupRef.current.position.y + dy;
-      
+
       let appliedDy = dy;
 
       if (terrainRef.current) {
         const downVector = new THREE.Vector3(0, -1, 0);
         raycaster.current.set(new THREE.Vector3(nextX, 500, nextZ), downVector);
-        
+
         const intersects = raycaster.current.intersectObject(terrainRef.current, true);
-        
+
         if (intersects.length > 0) {
           const terrainY = intersects[0].point.y;
-          const minHover = terrainY + 4; 
+          const minHover = terrainY + 4;
           const droneWorldY = nextY + 80;
-          
+
           if (droneWorldY < minHover) {
             const correction = minHover - droneWorldY;
             appliedDy += correction;
             nextY += correction;
           }
-          
+
           const altDisplay = document.getElementById('alt-display');
           if (altDisplay) {
             const alt = Math.max(0, (nextY + 80) - terrainY);
@@ -177,7 +174,6 @@ function DroneController({ totalArea, controlsRef, terrainRef }) {
   );
 }
 
-/*  Rojo opaco */
 const T = {
   bg: '#000000',
   bgSurface: 'rgba(10, 10, 10, 0.75)',
@@ -317,7 +313,6 @@ function HudTag({ children, color = T.textTertiary, style = {} }) {
   );
 }
 
-/* MAIN DASHBOARD */
 export default function Dashboard({ totalArea, setTotalArea }) {
   const [temperature, setTemperature] = useState(-15);
   const [humidity, setHumidity] = useState(15);
@@ -333,6 +328,7 @@ export default function Dashboard({ totalArea, setTotalArea }) {
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [activeView, setActiveView] = useState('vision3d');
   const [showVisionCard, setShowVisionCard] = useState(true);
+  const [showDesign, setShowDesign] = useState(false);
   const audioRef = useRef(null);
   const controlsRef = useRef();
   const terrainRef = useRef();
@@ -400,10 +396,8 @@ export default function Dashboard({ totalArea, setTotalArea }) {
     <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', position: 'relative', background: T.bg }}>
       <style>{globalStyles}</style>
 
-      {/* Ambient gradient */}
       <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 60% 40% at 50% 100%, rgba(193,74,56,0.06) 0%, transparent 70%)', pointerEvents: 'none', zIndex: 0 }} />
 
-      {/* 3D CANVAS */}
       <div style={{ position: 'absolute', inset: 0, zIndex: 1 }}>
         <Canvas shadows camera={{ position: [0, 85, 22], fov: 48 }}>
           <color attach="background" args={['#1a0f08']} />
@@ -420,18 +414,42 @@ export default function Dashboard({ totalArea, setTotalArea }) {
         </Canvas>
       </div>
 
-      {/* CRT scanlines */}
       <div style={{
         position: 'absolute', inset: 0, zIndex: 2, pointerEvents: 'none',
         background: 'repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,0.018) 3px,rgba(0,0,0,0.018) 4px)'
       }} />
 
-      {/* HUD OVERLAYS (Centro) */}
       <div style={{ position: 'absolute', bottom: 84, left: '50%', transform: 'translateX(-50%)', zIndex: 20, pointerEvents: 'none' }}>
         <HudTag>ÁREA {totalArea} km² · E1 {(totalArea * 0.5).toFixed(1)} km² · E2 {(totalArea * 0.5).toFixed(1)} km²</HudTag>
       </div>
 
-      {/* Corner brackets */}
+      <button onClick={() => setShowDesign(true)} style={{
+        position: 'absolute', top: 20, right: 270, zIndex: 20, background: 'rgba(10, 10, 10, 0.75)',
+        backdropFilter: 'blur(24px) saturate(180%)', border: `1px solid ${T.border}`, borderRadius: 20,
+        color: T.textSecondary, fontFamily: T.mono, fontSize: 9, letterSpacing: '0.15em',
+        padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, transition: 'all 0.3s'
+      }} onMouseEnter={e => { e.currentTarget.style.color = T.accent; e.currentTarget.style.borderColor = T.accentDim; }}
+        onMouseLeave={e => { e.currentTarget.style.color = T.textSecondary; e.currentTarget.style.borderColor = T.border; }}>
+        <span style={{ fontSize: 14 }}>◩</span> PLANO ESTRUCTURAL
+      </button>
+
+      {showDesign && (
+        <div style={{
+          position: 'absolute', inset: 0, zIndex: 100, background: 'rgba(0,0,0,0.85)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(10px)'
+        }}>
+          <img src="./design.png" alt="Plano Estructural" style={{ maxWidth: '90%', maxHeight: '90%', objectFit: 'contain', border: `1px solid ${T.border}`, borderRadius: 20 }} />
+          <button onClick={() => setShowDesign(false)} style={{
+            position: 'absolute', top: 30, right: 30, background: T.bgSurface, border: `1px solid ${T.border}`,
+            color: T.textMax, padding: '10px 20px', borderRadius: 30, cursor: 'pointer', fontFamily: T.mono, fontSize: 10,
+            letterSpacing: '0.1em'
+          }} onMouseEnter={e => { e.currentTarget.style.color = T.accent; e.currentTarget.style.borderColor = T.accentDim; }}
+            onMouseLeave={e => { e.currentTarget.style.color = T.textMax; e.currentTarget.style.borderColor = T.border; }}>
+            ✕ CERRAR PLANO
+          </button>
+        </div>
+      )}
+
       {[{ top: 76, left: 14 }, { top: 76, right: 14 }, { bottom: 14, left: 14 }, { bottom: 14, right: 14 }].map((pos, i) => (
         <div key={i} style={{
           position: 'absolute', ...pos, zIndex: 20, pointerEvents: 'none', width: 12, height: 12,
@@ -442,7 +460,6 @@ export default function Dashboard({ totalArea, setTotalArea }) {
         }} />
       ))}
 
-      {/* SIDEBAR */}
       <aside style={{ position: 'absolute', left: 20, top: 20, bottom: 20, width: 180, zIndex: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <GlassPanel style={{ padding: '20px 16px' }}>
           <div style={{ marginBottom: 28 }}>
@@ -478,7 +495,6 @@ export default function Dashboard({ totalArea, setTotalArea }) {
           </nav>
         </GlassPanel>
 
-        {/* HUD OVERLAYS LEFT */}
         <div style={{ pointerEvents: 'none', display: 'flex', flexDirection: 'column', gap: 7, alignItems: 'flex-start' }}>
           <HudTag color={T.rose}>● REC</HudTag>
           <HudTag><span id="alt-display">ALT 80.4 m</span></HudTag>
@@ -488,16 +504,10 @@ export default function Dashboard({ totalArea, setTotalArea }) {
           <HudTag color={T.accent} style={{ whiteSpace: 'normal', textAlign: 'left' }}>WASD + Q/E — MOVER DRON</HudTag>
         </div>
 
-        <GlassPanel style={{ padding: '14px 16px', marginTop: 'auto' }}>
-          <StatusDot color={T.teal} blink>SISTEMA ACTIVO</StatusDot>
-          <div style={{ marginTop: 10, fontFamily: T.mono, fontSize: 8, color: T.textTertiary }}>UPTIME 47d · 12h</div>
-        </GlassPanel>
       </aside>
 
-      {/* RIGHT PANEL */}
       <div style={{ position: 'absolute', right: 20, top: 20, bottom: 20, width: 230, zIndex: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
 
-        {/* HUD OVERLAYS RIGHT */}
         <div style={{ pointerEvents: 'none', display: 'flex', flexDirection: 'column', gap: 7, alignItems: 'flex-end' }}>
           <HudTag>VALLES MARINERIS · B-42</HudTag>
           <HudTag>14.5°S · 55.7°W</HudTag>
@@ -548,8 +558,8 @@ export default function Dashboard({ totalArea, setTotalArea }) {
         <GlassPanel style={{ padding: '16px 18px' }}>
           <EyeBrow>Reservas</EyeBrow>
           <div style={{ marginTop: 8 }}>
-            <span style={{ fontFamily: T.serif, fontSize: 28, fontWeight: 400, color: T.blue }}>{(currentWater / 1_000_000).toFixed(2)}</span>
-            <span style={{ fontFamily: T.mono, fontSize: 9, color: T.textTertiary, marginLeft: 6 }}>M L</span>
+            <span style={{ fontFamily: T.serif, fontSize: 28, fontWeight: 400, color: T.blue }}>{(currentWater / 1000).toFixed(2)}</span>
+            <span style={{ fontFamily: T.mono, fontSize: 9, color: T.textTertiary, marginLeft: 6 }}>KL</span>
           </div>
         </GlassPanel>
 
@@ -569,10 +579,8 @@ export default function Dashboard({ totalArea, setTotalArea }) {
         </GlassPanel>
       </div>
 
-      {/* MAIN CONTENT */}
       <main style={{ position: 'absolute', left: 220, right: 270, top: 20, zIndex: 15 }}>
 
-        {/* VISION 3D */}
         {activeView === 'vision3d' && showVisionCard && (
           <div style={{ animation: 'fadeIn 0.3s ease', display: 'flex', justifyContent: 'center', marginTop: '160px' }}>
             <GlassPanel style={{ padding: '28px 36px', maxWidth: 400, textAlign: 'center' }}>
@@ -600,7 +608,6 @@ export default function Dashboard({ totalArea, setTotalArea }) {
           </div>
         )}
 
-        {/* CONTROLS  */}
         {activeView === 'controls' && (
           <GlassPanel style={{ padding: '28px 32px', width: 400 }}>
             <h2 style={{ fontFamily: T.serif, fontSize: 22, fontWeight: 400, color: T.textMax, marginBottom: 24 }}>
@@ -648,7 +655,6 @@ export default function Dashboard({ totalArea, setTotalArea }) {
           </GlassPanel>
         )}
 
-        {/* RESULTS  */}
         {activeView === 'results' && result && (
           <GlassPanel style={{ padding: '28px 32px', width: 420 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
@@ -680,7 +686,6 @@ export default function Dashboard({ totalArea, setTotalArea }) {
         )}
       </main>
 
-      {/* DaLiA */}
       {activeView === 'chat' && (
         <GlassPanel style={{
           position: 'absolute',
@@ -746,7 +751,6 @@ export default function Dashboard({ totalArea, setTotalArea }) {
         </GlassPanel>
       )}
 
-      {/* Bottom status bar */}
       <GlassPanel style={{
         position: 'absolute', bottom: 18, left: 20, zIndex: 20,
         padding: '8px 16px', display: 'flex', gap: 20, alignItems: 'center',
